@@ -1,0 +1,13 @@
+on: issue_comment
+
+jobs:
+  pr_commented_build:
+    name: PR comment
+    if: ${{ github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo ${{ github.head_ref }}
+          
+        env:
+          NUMBER: ${{ github.event.issue.number }}
