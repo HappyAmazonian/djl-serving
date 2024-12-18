@@ -8,6 +8,7 @@ jobs:
     steps:
       - run: |
           echo ${{ github.head_ref }}
+          echo ${{ toJson(github.event.issue.pull_request) }}
           
         env:
           NUMBER: ${{ github.event.issue.number }}
