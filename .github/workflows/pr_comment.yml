@@ -1,17 +1,44 @@
-on: issue_comment
+on: 
+  issue_comment:
+    types: [created]
 
 jobs:
   pr_commented_build:
     name: PR comment
-    if: ${{ github.event.issue.pull_request && startsWith( github.event.comment.body, 'test1')}}
+    if: ${{ github.event.issue.pull_request && startsWith( github.event.comment.body, './build_image')}}
     runs-on: ubuntu-latest
     env:
       GITHUB_CONTEXT: ${{ toJson(github) }}
       PR_CONTEXT: ${{ toJson(github.event.issue.pull_request) }}
     steps:
+      - name: Get PR sha
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          export PR_URL="${{ github.event.issue.pull_request.url }}"
+          export PR_NUMBER=${PR_URL##*/}
+          export BRANCH_NAME=$(gh pr view $PR_NUMBER --json headRefName --jq '.headRefName')
+          export BRANCH_HEAD=$(gh pr view $PR_NUMBER --json commits --jq '.commits[-1].oid')
+          echo "PR $PR_NUMBER is for $BRANCH_NAME @ $BRANCH_HEAD"
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "BRANCH_HEAD=$BRANCH_HEAD" >> $GITHUB_ENV
+      - uses: actions/checkout@v4
       - run: |
           echo $GITHUB_CONTEXT 
           echo $PR_CONTEXT
-
+          echo "instance_id_1=1" >>"$GITHUB_OUTPUT"
+          echo "instance_id_2=2" >>"$GITHUB_OUTPUT"
+          echo "instance_id_3=3" >>"$GITHUB_OUTPUT"
         env:
           NUMBER: ${{ github.event.issue.number }}
+  test:
+    runs-on: ubuntu-latest
+    name: test output
+    needs: [pr_commented_build]
+    env:
+      inst_output: ${{ toJson(needs.pr_commented_build.outputs) }}
+    steps:
+      - name: echo a lot
+        run:  |-
+          echo $inst_output
