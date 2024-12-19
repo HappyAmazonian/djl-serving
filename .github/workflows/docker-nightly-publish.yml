@@ -167,22 +167,29 @@ jobs:
     if: always()
     runs-on: [ self-hosted, scheduler ]
     needs: [nightly-build, create-runners]
+    env:
+      runner_output: ${{ toJson(needs.create-runners.outputs) }}
     steps:
       - name: Stop all instances
         run: |
           cd /home/ubuntu/djl_benchmark_script/scripts
-          ids=${{ toJson(needs.create-runners.outputs) }}
-          instance_id=${{ needs.create-runners.outputs.cpu_instance_id_1 }}
+          for key in $(echo $runner_output | jq -r 'keys[]'); do
+            instance_id=$(echo $runner_output | jq -r ".$key")
+            echo "Key: $key, instance_id: $instance_id"
+            ./stop_instance.sh $instance_id
+          done
+
+          instance_id=${{ needs.create-runners.outputs.instance_id_cpu }}
           ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.cpu_instance_id_2 }}
+          instance_id=${{ needs.create-runners.outputs.instance_id_cpu-full }}
           ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.cpu_instance_id_3 }}
+          instance_id=${{ needs.create-runners.outputs.instance_id_pytorch-inf2 }}
           ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.cpu_instance_id_4 }}
+          instance_id=${{ needs.create-runners.outputs.instance_id_pytorch-gpu }}
           ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.cpu_instance_id_5 }}
+          instance_id=${{ needs.create-runners.outputs.instance_id_tensorrt-llm }}
           ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.cpu_instance_id_6 }}
+          instance_id=${{ needs.create-runners.outputs.instance_id_lmi }}
           ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.graviton_instance_id_1 }}
+          instance_id=${{ needs.create-runners.outputs.instance_id_aarch64 }}
           ./stop_instance.sh $instance_id
