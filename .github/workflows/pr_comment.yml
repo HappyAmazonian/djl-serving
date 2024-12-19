@@ -5,6 +5,10 @@ on:
 jobs:
   pr_commented_build:
     name: PR comment
+    outputs:
+      a: ${{ steps.abc.outputs.instance_id_1}}
+      b: ${{ steps.abc.outputs.instance_id_2}}
+      c: ${{ steps.abc.outputs.instance_id_3}}
     if: ${{ github.event.issue.pull_request && startsWith( github.event.comment.body, './build_image')}}
     runs-on: ubuntu-latest
     env:
@@ -24,7 +28,9 @@ jobs:
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           echo "BRANCH_HEAD=$BRANCH_HEAD" >> $GITHUB_ENV
       - uses: actions/checkout@v4
-      - run: |
+      - id: abc
+        run: |
+
           echo $GITHUB_CONTEXT 
           echo $PR_CONTEXT
           echo "instance_id_1=1" >>"$GITHUB_OUTPUT"
