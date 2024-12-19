@@ -9,6 +9,7 @@ jobs:
       a: ${{ steps.abc.outputs.instance_id_1}}
       b: ${{ steps.abc.outputs.instance_id_2}}
       c: ${{ steps.abc.outputs.instance_id_3}}
+      instance_id_cpu-full: ${{ steps.abc.outputs.instance_id_cpu-full}}
     if: ${{ github.event.issue.pull_request && startsWith( github.event.comment.body, './build_image')}}
     runs-on: ubuntu-latest
     env:
@@ -36,7 +37,10 @@ jobs:
           echo "instance_id_1=1" >>"$GITHUB_OUTPUT"
           echo "instance_id_2=2" >>"$GITHUB_OUTPUT"
           echo "instance_id_3=3" >>"$GITHUB_OUTPUT"
+          instance_id=`grep "instance_id_3=" $GITHUB_OUTPUT | cut -d'=' -f2`
+          echo $instance_id
           echo "instance_id_cpu-full=i-2313213123" >>"$GITHUB_OUTPUT"
+          echo "instance_id_cpu-x=$instance_id" >>"$GITHUB_OUTPUT"
         env:
           NUMBER: ${{ github.event.issue.number }}
   test:
@@ -52,3 +56,4 @@ jobs:
           echo $inst_output| jq -r '.a'
           echo $inst_output| jq -r '.b'
           echo $inst_output| jq -r '.c'
+          echo $inst_output| jq -r '.instance_id_cpu-full'
