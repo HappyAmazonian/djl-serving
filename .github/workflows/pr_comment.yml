@@ -48,3 +48,6 @@ jobs:
       - name: echo a lot
         run:  |-
           echo $inst_output
+          echo $inst_output| jq -r '.a'
+          echo $inst_output| jq -r '.b'
+          echo $inst_output| jq -r '.c'
