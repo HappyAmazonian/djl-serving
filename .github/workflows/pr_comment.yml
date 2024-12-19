@@ -36,6 +36,7 @@ jobs:
           echo "instance_id_1=1" >>"$GITHUB_OUTPUT"
           echo "instance_id_2=2" >>"$GITHUB_OUTPUT"
           echo "instance_id_3=3" >>"$GITHUB_OUTPUT"
+          echo "instance_id_cpu-full=i-2313213123" >>"$GITHUB_OUTPUT"
         env:
           NUMBER: ${{ github.event.issue.number }}
   test:
