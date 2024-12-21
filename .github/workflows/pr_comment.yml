@@ -29,6 +29,9 @@ jobs:
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           echo "BRANCH_HEAD=$BRANCH_HEAD" >> $GITHUB_ENV
       - uses: actions/checkout@v4
+      - id: run-checkout 
+        run: |
+          gh pr checkout ${{ github.event.issue.number }}
       - id: abc
         run: |
 
@@ -56,4 +59,3 @@ jobs:
           echo $inst_output| jq -r '.a'
           echo $inst_output| jq -r '.b'
           echo $inst_output| jq -r '.c'
-          echo $inst_output| jq -r '.instance_id_cpu-full'
