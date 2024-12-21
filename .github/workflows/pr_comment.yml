@@ -15,6 +15,7 @@ jobs:
     env:
       GITHUB_CONTEXT: ${{ toJson(github) }}
       PR_CONTEXT: ${{ toJson(github.event.issue.pull_request) }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Get PR sha
         env:
@@ -44,8 +45,7 @@ jobs:
           echo $instance_id
           echo "instance_id_cpu-full=i-2313213123" >>"$GITHUB_OUTPUT"
           echo "instance_id_cpu-x=$instance_id" >>"$GITHUB_OUTPUT"
-        env:
-          NUMBER: ${{ github.event.issue.number }}
+
   test:
     runs-on: ubuntu-latest
     name: test output
