@@ -22,7 +22,7 @@ jobs:
           # i.e. ./build_image ["cpu"] -> ["cpu"]
           # i.e. ./build_image "cpu" -> "cpu"
           # i.e. ./build_image ["cpu", "vllm"] -> ["cpu", "vllm"]
-          command=${{ github.event.comment.body }}
+          command='${{ github.event.comment.body }}'
           images_to_build="${command#*./build_image }"
           echo "images_to_build=$images_to_build" >>"$GITHUB_OUTPUT"
 
@@ -32,6 +32,7 @@ jobs:
     name: build docker image from PR comment
     uses: ./.github/workflows/docker-nightly-publish.yml
     secrets: inherit
+    permissions: write-all
     with:
       pr_issue_number: ${{  github.event.issue.number  }}
       mode: "nightly"
@@ -53,7 +54,7 @@ jobs:
           retries: 3
           script: |
             github.rest.issues.createComment({
-              issue_number: context.issue.number,
+              issue_number: ${{  github.event.issue.number  }},
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: 'Image built'
