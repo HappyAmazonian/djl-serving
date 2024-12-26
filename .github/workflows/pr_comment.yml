@@ -5,6 +5,8 @@ on:
 permissions:
   id-token: write
   contents: read
+  issues: write     # for issue comments
+  pull-requests: write  # if you also need PR comments
 
 jobs:
   parse-args:
@@ -32,7 +34,6 @@ jobs:
     name: build docker image from PR comment
     uses: ./.github/workflows/docker-nightly-publish.yml
     secrets: inherit
-    permissions: write-all
     with:
       pr_issue_number: ${{  github.event.issue.number  }}
       mode: "nightly"
