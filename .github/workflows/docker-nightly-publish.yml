@@ -7,6 +7,16 @@ on:
         description: 'release/nightly/temp, default is nightly'
         required: true
         default: 'nightly'
+      arch:
+        description: 'which images to build [ cpu, cpu-full, pytorch-inf2, pytorch-gpu, tensorrt-llm, lmi, aarch64]'
+        type: string
+        required: false
+        default: '["cpu", "cpu-full", "pytorch-inf2", "pytorch-gpu", "tensorrt-llm", "lmi", "aarch64"]'
+      pr_issue_number:
+        description: 'Checkout out the specific commit of a PR'
+        type: string
+        default: ''
+        required: false
   workflow_call:
     inputs:
       mode:
@@ -19,12 +29,26 @@ on:
         type: string
         required: false
         default: '["cpu", "cpu-full", "pytorch-inf2", "pytorch-gpu", "tensorrt-llm", "lmi", "aarch64"]'
-  schedule:
-    - cron: '0 13 * * *'
+      pr_issue_number:
+        description: 'Checkout out the specific commit of a PR'
+        type: string
+        default: ''
+        required: false
+    outputs:
+      djl_version:
+        description: "djl version"
+        value: ${{ jobs.nightly-build.outputs.djl_version }}
+      ecr_image_uri:
+        description: "uri to fetch temp image in ECR"
+        value: ${{ jobs.nightly-build.outputs.ecr_image_uri }}
 
 permissions:
   id-token: write
   contents: read
+
+env:
+  AWS_ECR_REPO: "185921645874.dkr.ecr.us-east-1.amazonaws.com/djl-ci-temp"
+  DOCKER_HUB_REPO: "deepjavalibrary/djl-serving"
 
 jobs:
   create-runners:
@@ -33,8 +57,7 @@ jobs:
       matrix:
         arch: ${{ fromJson(inputs.arch) }}
     steps:
-      - name: Create new CPU instance
-        if: matrix.arch != 'aarch64'
+      - name: Create new instance
         id: create_cpu
         run: |
           cd /home/ubuntu/djl_benchmark_script/scripts
@@ -42,21 +65,12 @@ jobs:
           https://api.github.com/repos/deepjavalibrary/djl-serving/actions/runners/registration-token \
           --fail \
           | jq '.token' | tr -d '"' )
-          ./start_instance.sh action_cpu $token djl-serving
-          instance_id=`grep "instance_id=" $GITHUB_OUTPUT | cut -d'=' -f2`
-          echo "instance_id_${{matrix.arch}}=$instance_id" >>"$GITHUB_OUTPUT"
-
-      - name: Create Graviton instance
-        if: matrix.arch == 'aarch64'
-        id: create_graviton
-        run: |
-          cd /home/ubuntu/djl_benchmark_script/scripts
-          token=$( curl -X POST -H "Authorization: token ${{ secrets.ACTION_RUNNER_PERSONAL_TOKEN }}" \
-          https://api.github.com/repos/deepjavalibrary/djl-serving/actions/runners/registration-token \
-          --fail \
-          | jq '.token' | tr -d '"' )
-          ./start_instance.sh action_graviton $token djl-serving
-          instance_id=`grep "instance_id=" $GITHUB_OUTPUT | cut -d'=' -f2`
+          instance_type=action_cpu
+          if [ "${{matrix.arch}}" == "aarch64" ]; then
+            instance_type=action_graviton
+          fi
+          ./start_instance.sh $instance_type $token djl-serving
+          instance_id=`grep "^instance_id=" $GITHUB_OUTPUT | cut -d'=' -f2`
           echo "instance_id_${{matrix.arch}}=$instance_id" >>"$GITHUB_OUTPUT"
 
     outputs:
@@ -70,16 +84,20 @@ jobs:
 
   nightly-build:
     needs: create-runners
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         arch: ${{ fromJson(inputs.arch) }}
     runs-on:
       - self-hosted
-      - instance_id_${{ matrix.arch }}
+      - ${{ matrix.arch != 'aarch64' && 'cpu' || 'aarch64' }}
       - RUN_ID-${{ github.run_id }}
       - RUN_NUMBER-${{ github.run_number }}
       - SHA-${{ github.sha }}
+    outputs:
+      djl_version: ${{ steps.get-versions.outputs.DJL_VERSION }}
+      ecr_image_uri: ${{steps.push-image.outputs.ECR_IMAGE_URI}}
     steps:
       - name: Clean disk space
         run: |
@@ -88,11 +106,11 @@ jobs:
           /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup \
           $AGENT_TOOLSDIRECTORY
       - uses: actions/checkout@v4
-      - name: Login to Docker
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_ACCESS_TOKEN }}
+      - name: checkout_pr
+        if: inputs.pr_issue_number != ''
+        run: |
+          gh pr checkout ${{ inputs.pr_issue_number }}
+          git --no-pager log --decorate=short --pretty=oneline -n3
       - name: install awscli
         run: |
           sudo apt-get update
@@ -118,35 +136,8 @@ jobs:
           SERVING_VERSION=$(awk -F '=' '/serving / {gsub(/ ?"/, "", $2); print $2}' gradle/libs.versions.toml)
           echo "DJL_VERSION=$DJL_VERSION" >> $GITHUB_ENV
           echo "SERVING_VERSION=$SERVING_VERSION" >> $GITHUB_ENV
-      - name: Build serving package for nightly
-        if: ${{ inputs.mode == '' || inputs.mode == 'nightly' }}
-        run: |
-          ./gradlew --refresh-dependencies :serving:dockerDeb -Psnapshot
-      - name: Build and push nightly docker image
-        if: ${{ inputs.mode == '' || inputs.mode == 'nightly' }}
-        working-directory: serving/docker
-        run: |
-          export NIGHTLY="-nightly"
-          docker compose build --no-cache \
-          --build-arg djl_version=${{ env.DJL_VERSION }}-SNAPSHOT \
-          --build-arg djl_serving_version=${{ env.SERVING_VERSION }}-SNAPSHOT \
-          ${{ matrix.arch }}
-          docker compose push ${{ matrix.arch }}
-      - name: Build and push temp image
-        if: ${{ inputs.mode == 'temp' }}
-        working-directory: serving/docker
-        run: |
-          export NIGHTLY="-nightly"
-          docker compose build --no-cache \
-          --build-arg djl_version=${{ env.DJL_VERSION }}-SNAPSHOT \
-          --build-arg djl_serving_version=${{ env.SERVING_VERSION }}-SNAPSHOT \
-          ${{ matrix.arch }}
-          repo="185921645874.dkr.ecr.us-east-1.amazonaws.com/djl-ci-temp"
-          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $repo
-          tempTag="$repo:${{ matrix.arch }}-${GITHUB_SHA}"
-          docker tag deepjavalibrary/djl-serving:${{ matrix.arch }}-nightly $tempTag
-          docker push $tempTag
-      - name: Build and push release docker image
+          echo "DJL_VERSION=$DJL_VERSION" >> $GITHUB_OUTPUT
+      - name: Build release candidate docker image
         if: ${{ inputs.mode == 'release' }}
         working-directory: serving/docker
         run: |
@@ -155,14 +146,39 @@ jobs:
           docker compose build --no-cache \
           --build-arg djl_version=${{ env.DJL_VERSION }} \
           --build-arg djl_serving_version=${{ env.SERVING_VERSION }} \
-          ${{ matrix.arch }}
-          docker compose push ${{ matrix.arch }}
-      - name: Retag image for release
-        if: ${{ matrix.containers.name == 'cpu' && inputs.mode == 'release' }}
+          ${{  matrix.arch }}
+      - name: Build temp docker image
+        if: ${{ inputs.mode == '' || inputs.mode == 'temp' || inputs.mode == 'nightly' }}
+        run: |
+          ./gradlew --refresh-dependencies :serving:dockerDeb -Psnapshot
+          cd serving/docker
+          export NIGHTLY="-nightly"
+          echo "NIGHTLY=$NIGHTLY" >> $GITHUB_ENV
+          docker compose build --no-cache \
+          --build-arg djl_version=${{ env.DJL_VERSION }}-SNAPSHOT \
+          --build-arg djl_serving_version=${{ env.SERVING_VERSION }}-SNAPSHOT \
+          ${{   matrix.arch }}
+      - name: Tag and push temp image to ECR repo
+        id: push-image
         working-directory: serving/docker
         run: |
-          docker tag deepjavalibrary/djl-serving:${{ env.SERVING_VERSION }} deepjavalibrary/djl-serving:latest
-          docker push deepjavalibrary/djl-serving:latest
+          ECR_REGION=$(echo "${{ env.AWS_ECR_REPO }}" | awk -F. '{print $4}')
+          aws ecr get-login-password --region $ECR_REGION | docker login --username AWS --password-stdin ${{env.AWS_ECR_REPO}}
+          mode=${{ inputs.mode }}
+          if [ "${{ inputs.mode }}" == "release" ]; then
+            mode=${{ env.DJL_VERSION }}
+          fi
+          tempRunIdTag="${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-$mode-${GITHUB_RUN_ID}"
+          tempCommitTag="${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-$mode-${GITHUB_SHA}"
+
+          docker tag ${{ env.DOCKER_HUB_REPO }}:${{ matrix.arch }}${{ env.NIGHTLY }} $tempRunIdTag
+          docker tag ${{ env.DOCKER_HUB_REPO }}:${{  matrix.arch }}${{ env.NIGHTLY }} $tempCommitTag
+          if ${{ inputs.mode == 'nightly' }}; then
+            docker tag ${{ env.DOCKER_HUB_REPO }}:${{ matrix.arch }}${{ env.NIGHTLY }} ${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-nightly
+          fi
+          time docker push --all-tags  ${{ env.AWS_ECR_REPO }}
+          echo "ECR_IMAGE_URI=$tempCommitTag" >> $GITHUB_OUTPUT
+
   stop-runners:
     if: always()
     runs-on: [ self-hosted, scheduler ]
@@ -171,25 +187,11 @@ jobs:
       runner_output: ${{ toJson(needs.create-runners.outputs) }}
     steps:
       - name: Stop all instances
+        continue-on-error: true
         run: |
           cd /home/ubuntu/djl_benchmark_script/scripts
           for key in $(echo $runner_output | jq -r 'keys[]'); do
-            instance_id=$(echo $runner_output | jq -r ".$key")
+            instance_id=$(echo $runner_output | jq -r ".[\"$key\"]")
             echo "Key: $key, instance_id: $instance_id"
             ./stop_instance.sh $instance_id
           done
-
-          instance_id=${{ needs.create-runners.outputs.instance_id_cpu }}
-          ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.instance_id_cpu-full }}
-          ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.instance_id_pytorch-inf2 }}
-          ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.instance_id_pytorch-gpu }}
-          ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.instance_id_tensorrt-llm }}
-          ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.instance_id_lmi }}
-          ./stop_instance.sh $instance_id
-          instance_id=${{ needs.create-runners.outputs.instance_id_aarch64 }}
-          ./stop_instance.sh $instance_id
