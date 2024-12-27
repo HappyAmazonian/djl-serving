@@ -38,6 +38,7 @@ jobs:
       PR_CONTEXT: ${{ toJson(github.event.issue.pull_request) }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/workflows/docker-nightly-publish.yml
         name: build docker image from PR comment
         id: build-docker
