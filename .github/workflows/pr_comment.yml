@@ -13,7 +13,7 @@ jobs:
     name: parse args from the PR comment
     runs-on: ubuntu-latest
     outputs:
-      images_to_build: ${{ steps.parase-build-images.output.images_to_build }}
+      images_to_build: ${{ steps.parase-build-images.outputs.images_to_build }}
     if: ${{ github.event.issue.pull_request && startsWith( github.event.comment.body, './')}}
     steps:
       - name: Parse build images
@@ -28,26 +28,23 @@ jobs:
           images_to_build="${command#*./build_image }"
           echo "images_to_build=$images_to_build" >>"$GITHUB_OUTPUT"
 
-  build-docker:
-    if: ${{ github.event.issue.pull_request && startsWith( github.event.comment.body, './build_images')}}
-    needs: [ parse-args ]
-    name: build docker image from PR comment
-    uses: ./.github/workflows/docker-nightly-publish.yml
-    secrets: inherit
-    with:
-      pr_issue_number: ${{  github.event.issue.number  }}
-      mode: "nightly"
-      arch: ${{ needs.parse-args.outputs.images_to_build }}
-
-  pr_commented_build:
+  pr_build_comment:
     name: PR comment
     if: ${{ github.event.issue.pull_request && startsWith( github.event.comment.body, './build_image')}}
+    needs: [ parse-args ]
     runs-on: ubuntu-latest
     env:
       GITHUB_CONTEXT: ${{ toJson(github) }}
       PR_CONTEXT: ${{ toJson(github.event.issue.pull_request) }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: ./.github/workflows/docker-nightly-publish.yml
+        name: build docker image from PR comment
+        id: build-docker
+        with:
+          pr_issue_number: ${{  github.event.issue.number  }}
+          mode: "nightly"
+          arch: ${{ needs.parse-args.outputs.images_to_build }}
       - uses: actions/github-script@v7
         id: my-script
         with:
@@ -58,7 +55,7 @@ jobs:
               issue_number: ${{  github.event.issue.number  }},
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: 'Image built'
+              body: 'Image built ${{ steps.build-docker.outputs.ecr_image_uri }}'
             })
       - name: Get PR sha
         env:
@@ -73,16 +70,16 @@ jobs:
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           echo "BRANCH_HEAD=$BRANCH_HEAD" >> $GITHUB_ENV
 
-  test:
-    runs-on: ubuntu-latest
-    name: test output
-    needs: [pr_commented_build]
-    env:
-      inst_output: ${{ toJson(needs.pr_commented_build.outputs) }}
-    steps:
-      - name: echo a lot
-        run:  |-
-          echo $inst_output
-          echo $inst_output| jq -r '.a'
-          echo $inst_output| jq -r '.b'
-          echo $inst_output| jq -r '.c'
+  # test:
+  #   runs-on: ubuntu-latest
+  #   name: test output
+  #   needs: [pr_commented_build]
+  #   env:
+  #     inst_output: ${{ toJson(needs.pr_commented_build.outputs) }}
+  #   steps:
+  #     - name: echo a lot
+  #       run:  |-
+  #         echo $inst_output
+  #         echo $inst_output| jq -r '.a'
+  #         echo $inst_output| jq -r '.b'
+  #         echo $inst_output| jq -r '.c'

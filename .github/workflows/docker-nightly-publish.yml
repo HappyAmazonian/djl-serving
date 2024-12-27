@@ -51,147 +51,157 @@ env:
   DOCKER_HUB_REPO: "deepjavalibrary/djl-serving"
 
 jobs:
-  create-runners:
-    runs-on: [ self-hosted, scheduler ]
-    strategy:
-      matrix:
-        arch: ${{ fromJson(inputs.arch) }}
-    steps:
-      - name: Create new instance
-        id: create_cpu
-        run: |
-          cd /home/ubuntu/djl_benchmark_script/scripts
-          token=$( curl -X POST -H "Authorization: token ${{ secrets.ACTION_RUNNER_PERSONAL_TOKEN }}" \
-          https://api.github.com/repos/deepjavalibrary/djl-serving/actions/runners/registration-token \
-          --fail \
-          | jq '.token' | tr -d '"' )
-          instance_type=action_cpu
-          if [ "${{matrix.arch}}" == "aarch64" ]; then
-            instance_type=action_graviton
-          fi
-          ./start_instance.sh $instance_type $token djl-serving
-          instance_id=`grep "^instance_id=" $GITHUB_OUTPUT | cut -d'=' -f2`
-          echo "instance_id_${{matrix.arch}}=$instance_id" >>"$GITHUB_OUTPUT"
-
-    outputs:
-      instance_id_cpu: ${{ steps.create_cpu.outputs.instance_id_cpu }}
-      instance_id_cpu-full: ${{ steps.create_cpu.outputs.instance_id_cpu-full }}
-      instance_id_pytorch-inf2: ${{ steps.create_cpu.outputs.instance_id_pytorch-inf2 }}
-      instance_id_pytorch-gpu: ${{ steps.create_cpu.outputs.instance_id_pytorch-gpu }}
-      instance_id_tensorrt-llm: ${{ steps.create_cpu.outputs.instance_id_tensorrt-llm }}
-      instance_id_lmi: ${{ steps.create_cpu.outputs.instance_id_lmi }}
-      instance_id_aarch64: ${{ steps.create_cpu.outputs.instance_id_aarch64 }}
-
   nightly-build:
-    needs: create-runners
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: ${{ fromJson(inputs.arch) }}
-    runs-on:
-      - self-hosted
-      - ${{ matrix.arch != 'aarch64' && 'cpu' || 'aarch64' }}
-      - RUN_ID-${{ github.run_id }}
-      - RUN_NUMBER-${{ github.run_number }}
-      - SHA-${{ github.sha }}
+    runs-on: ubuntu-latest
     outputs:
-      djl_version: ${{ steps.get-versions.outputs.DJL_VERSION }}
-      ecr_image_uri: ${{steps.push-image.outputs.ECR_IMAGE_URI}}
+      ecr_image_uri: ${{ steps.temp.outputs.x }}
     steps:
-      - name: Clean disk space
+      - name: out
+        id: temp
         run: |
-          sudo rm -rf \
-          /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-          /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup \
-          $AGENT_TOOLSDIRECTORY
-      - uses: actions/checkout@v4
-      - name: checkout_pr
-        if: inputs.pr_issue_number != ''
-        run: |
-          gh pr checkout ${{ inputs.pr_issue_number }}
-          git --no-pager log --decorate=short --pretty=oneline -n3
-      - name: install awscli
-        run: |
-          sudo apt-get update
-          sudo apt-get install awscli -y
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::185921645874:role/github-actions-djl-serving
-          aws-region: us-east-1
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'corretto'
-          java-version: 17
-      - uses: actions/cache@v4
-        with:
-          path: ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
-      - name: Extract DJL and DJL Serving versions from TOML
-        id: get-versions
-        run: |
-          DJL_VERSION=$(awk -F '=' '/djl / {gsub(/ ?"/, "", $2); print $2}' gradle/libs.versions.toml)
-          SERVING_VERSION=$(awk -F '=' '/serving / {gsub(/ ?"/, "", $2); print $2}' gradle/libs.versions.toml)
-          echo "DJL_VERSION=$DJL_VERSION" >> $GITHUB_ENV
-          echo "SERVING_VERSION=$SERVING_VERSION" >> $GITHUB_ENV
-          echo "DJL_VERSION=$DJL_VERSION" >> $GITHUB_OUTPUT
-      - name: Build release candidate docker image
-        if: ${{ inputs.mode == 'release' }}
-        working-directory: serving/docker
-        run: |
-          export BASE_RELEASE_VERSION="${{ env.SERVING_VERSION }}"
-          export RELEASE_VERSION="${{ env.SERVING_VERSION }}-"
-          docker compose build --no-cache \
-          --build-arg djl_version=${{ env.DJL_VERSION }} \
-          --build-arg djl_serving_version=${{ env.SERVING_VERSION }} \
-          ${{  matrix.arch }}
-      - name: Build temp docker image
-        if: ${{ inputs.mode == '' || inputs.mode == 'temp' || inputs.mode == 'nightly' }}
-        run: |
-          ./gradlew --refresh-dependencies :serving:dockerDeb -Psnapshot
-          cd serving/docker
-          export NIGHTLY="-nightly"
-          echo "NIGHTLY=$NIGHTLY" >> $GITHUB_ENV
-          docker compose build --no-cache \
-          --build-arg djl_version=${{ env.DJL_VERSION }}-SNAPSHOT \
-          --build-arg djl_serving_version=${{ env.SERVING_VERSION }}-SNAPSHOT \
-          ${{   matrix.arch }}
-      - name: Tag and push temp image to ECR repo
-        id: push-image
-        working-directory: serving/docker
-        run: |
-          ECR_REGION=$(echo "${{ env.AWS_ECR_REPO }}" | awk -F. '{print $4}')
-          aws ecr get-login-password --region $ECR_REGION | docker login --username AWS --password-stdin ${{env.AWS_ECR_REPO}}
-          mode=${{ inputs.mode }}
-          if [ "${{ inputs.mode }}" == "release" ]; then
-            mode=${{ env.DJL_VERSION }}
-          fi
-          tempRunIdTag="${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-$mode-${GITHUB_RUN_ID}"
-          tempCommitTag="${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-$mode-${GITHUB_SHA}"
+          echo "x=abc:dddd" >>"$GITHUB_OUTPUT"
 
-          docker tag ${{ env.DOCKER_HUB_REPO }}:${{ matrix.arch }}${{ env.NIGHTLY }} $tempRunIdTag
-          docker tag ${{ env.DOCKER_HUB_REPO }}:${{  matrix.arch }}${{ env.NIGHTLY }} $tempCommitTag
-          if ${{ inputs.mode == 'nightly' }}; then
-            docker tag ${{ env.DOCKER_HUB_REPO }}:${{ matrix.arch }}${{ env.NIGHTLY }} ${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-nightly
-          fi
-          time docker push --all-tags  ${{ env.AWS_ECR_REPO }}
-          echo "ECR_IMAGE_URI=$tempCommitTag" >> $GITHUB_OUTPUT
+  # create-runners:
+  #   runs-on: [ self-hosted, scheduler ]
+  #   strategy:
+  #     matrix:
+  #       arch: ${{ fromJson(inputs.arch) }}
+  #   steps:
+  #     - name: Create new instance
+  #       id: create_cpu
+  #       run: |
+  #         cd /home/ubuntu/djl_benchmark_script/scripts
+  #         token=$( curl -X POST -H "Authorization: token ${{ secrets.ACTION_RUNNER_PERSONAL_TOKEN }}" \
+  #         https://api.github.com/repos/deepjavalibrary/djl-serving/actions/runners/registration-token \
+  #         --fail \
+  #         | jq '.token' | tr -d '"' )
+  #         instance_type=action_cpu
+  #         if [ "${{matrix.arch}}" == "aarch64" ]; then
+  #           instance_type=action_graviton
+  #         fi
+  #         ./start_instance.sh $instance_type $token djl-serving
+  #         instance_id=`grep "^instance_id=" $GITHUB_OUTPUT | cut -d'=' -f2`
+  #         echo "instance_id_${{matrix.arch}}=$instance_id" >>"$GITHUB_OUTPUT"
 
-  stop-runners:
-    if: always()
-    runs-on: [ self-hosted, scheduler ]
-    needs: [nightly-build, create-runners]
-    env:
-      runner_output: ${{ toJson(needs.create-runners.outputs) }}
-    steps:
-      - name: Stop all instances
-        continue-on-error: true
-        run: |
-          cd /home/ubuntu/djl_benchmark_script/scripts
-          for key in $(echo $runner_output | jq -r 'keys[]'); do
-            instance_id=$(echo $runner_output | jq -r ".[\"$key\"]")
-            echo "Key: $key, instance_id: $instance_id"
-            ./stop_instance.sh $instance_id
-          done
+  #   outputs:
+  #     instance_id_cpu: ${{ steps.create_cpu.outputs.instance_id_cpu }}
+  #     instance_id_cpu-full: ${{ steps.create_cpu.outputs.instance_id_cpu-full }}
+  #     instance_id_pytorch-inf2: ${{ steps.create_cpu.outputs.instance_id_pytorch-inf2 }}
+  #     instance_id_pytorch-gpu: ${{ steps.create_cpu.outputs.instance_id_pytorch-gpu }}
+  #     instance_id_tensorrt-llm: ${{ steps.create_cpu.outputs.instance_id_tensorrt-llm }}
+  #     instance_id_lmi: ${{ steps.create_cpu.outputs.instance_id_lmi }}
+  #     instance_id_aarch64: ${{ steps.create_cpu.outputs.instance_id_aarch64 }}
+
+  # nightly-build:
+  #   needs: create-runners
+  #   timeout-minutes: 120
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       arch: ${{ fromJson(inputs.arch) }}
+  #   runs-on:
+  #     - self-hosted
+  #     - ${{ matrix.arch != 'aarch64' && 'cpu' || 'aarch64' }}
+  #     - RUN_ID-${{ github.run_id }}
+  #     - RUN_NUMBER-${{ github.run_number }}
+  #     - SHA-${{ github.sha }}
+  #   outputs:
+  #     djl_version: ${{ steps.get-versions.outputs.DJL_VERSION }}
+  #     ecr_image_uri: ${{steps.push-image.outputs.ECR_IMAGE_URI}}
+  #   steps:
+  #     - name: Clean disk space
+  #       run: |
+  #         sudo rm -rf \
+  #         /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+  #         /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup \
+  #         $AGENT_TOOLSDIRECTORY
+  #     - uses: actions/checkout@v4
+  #     - name: checkout_pr
+  #       if: inputs.pr_issue_number != ''
+  #       run: |
+  #         gh pr checkout ${{ inputs.pr_issue_number }}
+  #         git --no-pager log --decorate=short --pretty=oneline -n3
+  #     - name: install awscli
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install awscli -y
+  #     - name: Configure AWS Credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: arn:aws:iam::185921645874:role/github-actions-djl-serving
+  #         aws-region: us-east-1
+  #     - name: Set up JDK 17
+  #       uses: actions/setup-java@v4
+  #       with:
+  #         distribution: 'corretto'
+  #         java-version: 17
+  #     - uses: actions/cache@v4
+  #       with:
+  #         path: ~/.gradle/caches
+  #         key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+  #     - name: Extract DJL and DJL Serving versions from TOML
+  #       id: get-versions
+  #       run: |
+  #         DJL_VERSION=$(awk -F '=' '/djl / {gsub(/ ?"/, "", $2); print $2}' gradle/libs.versions.toml)
+  #         SERVING_VERSION=$(awk -F '=' '/serving / {gsub(/ ?"/, "", $2); print $2}' gradle/libs.versions.toml)
+  #         echo "DJL_VERSION=$DJL_VERSION" >> $GITHUB_ENV
+  #         echo "SERVING_VERSION=$SERVING_VERSION" >> $GITHUB_ENV
+  #         echo "DJL_VERSION=$DJL_VERSION" >> $GITHUB_OUTPUT
+  #     - name: Build release candidate docker image
+  #       if: ${{ inputs.mode == 'release' }}
+  #       working-directory: serving/docker
+  #       run: |
+  #         export BASE_RELEASE_VERSION="${{ env.SERVING_VERSION }}"
+  #         export RELEASE_VERSION="${{ env.SERVING_VERSION }}-"
+  #         docker compose build --no-cache \
+  #         --build-arg djl_version=${{ env.DJL_VERSION }} \
+  #         --build-arg djl_serving_version=${{ env.SERVING_VERSION }} \
+  #         ${{  matrix.arch }}
+  #     - name: Build temp docker image
+  #       if: ${{ inputs.mode == '' || inputs.mode == 'temp' || inputs.mode == 'nightly' }}
+  #       run: |
+  #         ./gradlew --refresh-dependencies :serving:dockerDeb -Psnapshot
+  #         cd serving/docker
+  #         export NIGHTLY="-nightly"
+  #         echo "NIGHTLY=$NIGHTLY" >> $GITHUB_ENV
+  #         docker compose build --no-cache \
+  #         --build-arg djl_version=${{ env.DJL_VERSION }}-SNAPSHOT \
+  #         --build-arg djl_serving_version=${{ env.SERVING_VERSION }}-SNAPSHOT \
+  #         ${{   matrix.arch }}
+  #     - name: Tag and push temp image to ECR repo
+  #       id: push-image
+  #       working-directory: serving/docker
+  #       run: |
+  #         ECR_REGION=$(echo "${{ env.AWS_ECR_REPO }}" | awk -F. '{print $4}')
+  #         aws ecr get-login-password --region $ECR_REGION | docker login --username AWS --password-stdin ${{env.AWS_ECR_REPO}}
+  #         mode=${{ inputs.mode }}
+  #         if [ "${{ inputs.mode }}" == "release" ]; then
+  #           mode=${{ env.DJL_VERSION }}
+  #         fi
+  #         tempRunIdTag="${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-$mode-${GITHUB_RUN_ID}"
+  #         tempCommitTag="${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-$mode-${GITHUB_SHA}"
+
+  #         docker tag ${{ env.DOCKER_HUB_REPO }}:${{ matrix.arch }}${{ env.NIGHTLY }} $tempRunIdTag
+  #         docker tag ${{ env.DOCKER_HUB_REPO }}:${{  matrix.arch }}${{ env.NIGHTLY }} $tempCommitTag
+  #         if ${{ inputs.mode == 'nightly' }}; then
+  #           docker tag ${{ env.DOCKER_HUB_REPO }}:${{ matrix.arch }}${{ env.NIGHTLY }} ${{ env.AWS_ECR_REPO }}:${{ matrix.arch }}-nightly
+  #         fi
+  #         time docker push --all-tags  ${{ env.AWS_ECR_REPO }}
+  #         echo "ECR_IMAGE_URI=$tempCommitTag" >> $GITHUB_OUTPUT
+
+  # stop-runners:
+  #   if: always()
+  #   runs-on: [ self-hosted, scheduler ]
+  #   needs: [nightly-build, create-runners]
+  #   env:
+  #     runner_output: ${{ toJson(needs.create-runners.outputs) }}
+  #   steps:
+  #     - name: Stop all instances
+  #       continue-on-error: true
+  #       run: |
+  #         cd /home/ubuntu/djl_benchmark_script/scripts
+  #         for key in $(echo $runner_output | jq -r 'keys[]'); do
+  #           instance_id=$(echo $runner_output | jq -r ".[\"$key\"]")
+  #           echo "Key: $key, instance_id: $instance_id"
+  #           ./stop_instance.sh $instance_id
+  #         done
