@@ -42,6 +42,7 @@ jobs:
   pr_build_comment:
     name: PR comment
     needs: [ build-docker ]
+    if: always()
     runs-on: ubuntu-latest
     env:
       GITHUB_CONTEXT: ${{ toJson(github) }}
