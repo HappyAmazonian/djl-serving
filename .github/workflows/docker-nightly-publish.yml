@@ -59,6 +59,7 @@ jobs:
       - name: out
         id: temp
         run: |
+          exit 1
           echo "x=abc:dddd" >>"$GITHUB_OUTPUT"
 
   # create-runners:
