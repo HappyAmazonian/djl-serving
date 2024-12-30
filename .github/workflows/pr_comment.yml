@@ -1,11 +1,12 @@
-on: 
+name: PR Comment Handler
+
+on:
   issue_comment:
     types: [created]
 
 permissions:
   id-token: write
   contents: read
-  issues: write     # for issue comments
   pull-requests: write  # if you also need PR comments
 
 jobs:
@@ -21,8 +22,8 @@ jobs:
         id: parase-build-images
         run: |-
           echo '${{ github.event.comment.body }}'
-          # i.e. ./build_image ["cpu"] -> ["cpu"]
           # i.e. ./build_image "cpu" -> "cpu"
+          # i.e. ./build_image ["cpu"] -> ["cpu"]
           # i.e. ./build_image ["cpu", "vllm"] -> ["cpu", "vllm"]
           command='${{ github.event.comment.body }}'
           images_to_build="${command#*./build_image }"
@@ -87,17 +88,3 @@ jobs:
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           echo "BRANCH_HEAD=$BRANCH_HEAD" >> $GITHUB_ENV
-
-  # test:
-  #   runs-on: ubuntu-latest
-  #   name: test output
-  #   needs: [pr_commented_build]
-  #   env:
-  #     inst_output: ${{ toJson(needs.pr_commented_build.outputs) }}
-  #   steps:
-  #     - name: echo a lot
-  #       run:  |-
-  #         echo $inst_output
-  #         echo $inst_output| jq -r '.a'
-  #         echo $inst_output| jq -r '.b'
-  #         echo $inst_output| jq -r '.c'
