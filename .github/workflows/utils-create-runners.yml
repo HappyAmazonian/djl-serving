@@ -2,9 +2,11 @@ on:
     workflow_call:
         inputs:
             instance_type:
+                type: string
                 description: 'instance type, action_g6/action_inf2/action_graviton'
                 required: true
             number:
+                type: string
                 description: 'number of instance'
                 required: true
         outputs:
