@@ -1,0 +1,51 @@
+on:
+    workflow_call:
+        inputs:
+            instance_type:
+                description: 'instance type, action_g6/action_inf2/action_graviton'
+                required: true
+            number:
+                description: 'number of instance'
+                required: true
+        outputs:
+            instance_ids:
+                description: "instance_ids for termination(json str)"
+                value: ${{ jobs.create-runners.outputs.instance_ids }}
+
+    workflow_dispatch:
+        inputs:
+            instance_type:
+                description: 'instance type, action_g6/action_inf2/action_graviton'
+                required: true
+            number:
+                description: 'number of instance'
+                required: true
+permissions:
+    id-token: write
+    contents: read
+
+jobs:
+    create-runners:
+        outputs:
+            instance_ids: ${{ steps.create_instances.outputs.instance_ids }}
+        runs-on: [self-hosted, scheduler]
+        - name: Create instances
+            id: create_instances
+            run: |
+            cd /home/ubuntu/djl_benchmark_script/scripts
+            token=$( curl -X POST -H "Authorization: token ${{ secrets.ACTION_RUNNER_PERSONAL_TOKEN }}" \
+            https://api.github.com/repos/deepjavalibrary/djl-serving/actions/runners/registration-token \
+            --fail \
+            | jq '.token' | tr -d '"' )
+            count=${{ inputs.number }}
+            instance_ids=()
+            for i in $(seq $count)
+            do
+                # ./start_instance.sh ${{ inputs.instance_type }} $token djl-serving
+                echo instance_id=$i >> $GITHUB_OUTPUT
+                instance_id=`grep "^instance_id=" $GITHUB_OUTPUT | tail -1 |cut -d'=' -f2`
+                instance_ids+=($instance_id)
+            done
+            json_array=$(printf '%s\n' "${instance_ids[@]}" | jq -R -c . | jq -s -c .)
+            echo "instance_ids=$json_array" >>"$GITHUB_OUTPUT"
+
