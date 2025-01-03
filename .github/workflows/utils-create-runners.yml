@@ -6,7 +6,7 @@ on:
                 description: 'instance type, action_g6/action_inf2/action_graviton'
                 required: true
             number:
-                type: string
+                type: number
                 description: 'number of instance'
                 required: true
         outputs:
@@ -30,7 +30,8 @@ jobs:
     create-runners:
         outputs:
             instance_ids: ${{ steps.create_instances.outputs.instance_ids }}
-        runs-on: [self-hosted, scheduler]
+        # runs-on: [self-hosted, scheduler]
+        runs-on: ubuntu-latest
         steps:
             - name: Create instances
               id: create_instances
