@@ -36,7 +36,7 @@ jobs:
             - name: Create instances
               id: create_instances
               run: |
-                    cd /home/ubuntu/djl_benchmark_script/scripts
+                    # cd /home/ubuntu/djl_benchmark_script/scripts
                     token=$( curl -X POST -H "Authorization: token ${{ secrets.ACTION_RUNNER_PERSONAL_TOKEN }}" \
                     https://api.github.com/repos/deepjavalibrary/djl-serving/actions/runners/registration-token \
                     --fail \
