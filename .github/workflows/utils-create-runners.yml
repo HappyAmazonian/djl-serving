@@ -52,4 +52,5 @@ jobs:
                     done
                     json_array=$(printf '%s\n' "${instance_ids[@]}" | jq -R -c . | jq -s -c .)
                     echo "instance_ids=$json_array" >>"$GITHUB_OUTPUT"
+                    echo "instance_ids=$json_array"
 
