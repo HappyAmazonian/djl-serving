@@ -1,4 +1,4 @@
-name: Integration tests
+name: Optimization Integration tests
 
 on:
   workflow_dispatch:
